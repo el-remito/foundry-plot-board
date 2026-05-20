@@ -1,0 +1,13 @@
+{
+  "id": "foundry-plot-board",
+  "title": "Plot Board",
+  "description": "Transform any scene into a collaborative freeform planning board. Players can place text cards, images, and draw connection lines between them.",
+  "version": "1.0.0",
+  "compatibility": {
+    "minimum": "14",
+    "verified": "14"
+  },
+  "esmodules": ["plot-board.js"],
+  "styles": ["board.css"],
+  "authors": []
+}

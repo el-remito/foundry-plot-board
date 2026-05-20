@@ -1,0 +1,80 @@
+@import url('https://fonts.googleapis.com/css2?family=Special+Elite&display=swap');
+
+/* ── Board overlay ─────────────────────────────────────────── */
+
+#foundry-plot-board-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  overflow: hidden;
+  pointer-events: all;
+  font-family: 'Special Elite', 'Courier New', monospace;
+
+  /* Cork / linen texture */
+  background-color: #5c3d22;
+  background-image:
+    radial-gradient(ellipse 130px 90px  at 12% 22%, rgba(130,  95, 60, 0.55) 0%, transparent 65%),
+    radial-gradient(ellipse 220px 110px at 78% 18%, rgba( 95,  68, 40, 0.45) 0%, transparent 60%),
+    radial-gradient(ellipse 160px 220px at 88% 72%, rgba(115,  82, 52, 0.45) 0%, transparent 55%),
+    radial-gradient(ellipse 190px 130px at 32% 82%, rgba(100,  70, 42, 0.50) 0%, transparent 60%),
+    radial-gradient(ellipse 110px 160px at 58% 48%, rgba(120,  88, 58, 0.35) 0%, transparent 55%),
+    radial-gradient(ellipse 250px  80px at 50%  5%, rgba( 85,  60, 35, 0.40) 0%, transparent 55%),
+    repeating-linear-gradient(
+       27deg,
+       transparent,          transparent          5px,
+       rgba(0,0,0,0.030)     5px,
+       rgba(0,0,0,0.030)     6px
+    ),
+    repeating-linear-gradient(
+      117deg,
+      transparent,            transparent          7px,
+      rgba(255,255,255,0.018) 7px,
+      rgba(255,255,255,0.018) 8px
+    );
+}
+
+/* ── Temporary exit button (replaced by toolbar in M2) ────── */
+
+#pb-exit-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 6px 14px;
+  background: rgba(20, 20, 20, 0.85);
+  color: #f5f0e8;
+  border: 1px solid rgba(245, 240, 232, 0.3);
+  border-radius: 20px;
+  font-family: 'Special Elite', 'Courier New', monospace;
+  font-size: 13px;
+  cursor: pointer;
+  z-index: 10;
+}
+
+#pb-exit-btn:hover {
+  background: rgba(50, 20, 20, 0.95);
+  border-color: #f0c040;
+  color: #f0c040;
+}
+
+/* ── Persistent resume button (lives outside the board layer) ── */
+
+#pb-board-resume {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  padding: 6px 14px;
+  background: rgba(20, 20, 20, 0.85);
+  color: #f5f0e8;
+  border: 1px solid rgba(245, 240, 232, 0.3);
+  border-radius: 20px;
+  font-family: 'Special Elite', 'Courier New', monospace;
+  font-size: 13px;
+  cursor: pointer;
+  z-index: 61;
+}
+
+#pb-board-resume:hover {
+  background: rgba(20, 40, 20, 0.95);
+  border-color: #f0c040;
+  color: #f0c040;
+}
