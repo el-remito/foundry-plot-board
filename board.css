@@ -120,6 +120,38 @@
   color: #f0c040;
 }
 
+/* ── SVG connection layer ──────────────────────────────────── */
+
+#pb-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none; /* SVG itself passes through; individual lines opt in */
+  overflow: visible;
+}
+
+/* ── Connect mode ──────────────────────────────────────────── */
+
+.pb-connect-mode {
+  cursor: crosshair !important;
+}
+
+.pb-connect-mode .sb-card {
+  cursor: crosshair !important;
+}
+
+.pb-connect-source {
+  outline: 2px solid #40a0f0 !important;
+  outline-offset: 1px;
+}
+
+.pb-btn-active {
+  background: rgba(240, 192, 64, 0.2) !important;
+  border-color: #f0c040 !important;
+  color: #f0c040 !important;
+}
+
 /* ── Cards ─────────────────────────────────────────────────── */
 
 #pb-card-container {
@@ -192,6 +224,42 @@
   );
 }
 
+/* ── Format bar (appears inside card during editing) ───────── */
+
+.pb-format-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 6px;
+  background: rgba(15, 10, 5, 0.88);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 3px 3px 0 0;
+  flex-shrink: 0;
+  z-index: 1;
+}
+
+.pb-format-btn {
+  width: 24px;
+  height: 24px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: #f5f0e8;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: serif; /* ensures B/I/U render correctly */
+}
+
+.pb-format-btn:hover {
+  background: rgba(240, 192, 64, 0.2);
+  border-color: #f0c040;
+  color: #f0c040;
+}
+
 /* ── Context menu ──────────────────────────────────────────── */
 
 #pb-context-menu {
@@ -231,6 +299,11 @@
 .pb-swatch.pb-swatch-active {
   border-color: #f0c040;
   transform: scale(1.1);
+}
+
+.pb-swatch-custom {
+  background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red) !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
 }
 
 .pb-menu-separator {
@@ -367,7 +440,7 @@
 #pb-board-resume {
   position: fixed;
   top: 12px;
-  right: 12px;
+  right: 308px; /* fallback — overridden by JS once sidebar width is known */
   padding: 6px 14px;
   background: rgba(20, 20, 20, 0.85);
   color: #f5f0e8;

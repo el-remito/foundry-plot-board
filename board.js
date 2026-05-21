@@ -1,25 +1,47 @@
 const MODULE_ID = 'foundry-plot-board';
 
+// Default palettes — used as fallbacks when settings haven't loaded
 const CARD_COLORS = [
-  { label: 'Cream',  value: '#e8dfc8' },
-  { label: 'Rose',   value: '#e8c8c8' },
-  { label: 'Sage',   value: '#c8dfc8' },
-  { label: 'Sky',    value: '#c8d8e8' },
+  { label: 'Cream',    value: '#e8dfc8' },
+  { label: 'Rose',     value: '#e8c8c8' },
+  { label: 'Sage',     value: '#c8dfc8' },
+  { label: 'Sky',      value: '#c8d8e8' },
   { label: 'Lavender', value: '#d8c8e8' },
-  { label: 'Amber',  value: '#e8d8a0' },
-  { label: 'Peach',  value: '#e8cdb8' },
-  { label: 'Slate',  value: '#c8cdd8' },
+  { label: 'Amber',    value: '#e8d8a0' },
+  { label: 'Peach',    value: '#e8cdb8' },
 ];
+
+const LINE_COLORS = [
+  { label: 'Tan',      value: '#c8b89a' },
+  { label: 'Rose',     value: '#d4a89a' },
+  { label: 'Sage',     value: '#a8c4b8' },
+  { label: 'Sky',      value: '#a8b8c8' },
+  { label: 'Lavender', value: '#b8a8c8' },
+  { label: 'Straw',    value: '#c8c4a8' },
+  { label: 'Peach',    value: '#c4b0a0' },
+];
+
+const LINE_DEFAULT_COLOR = LINE_COLORS[0].value;
 
 export class BoardLayer {
   constructor() {
-    this._el         = null;
-    this._cardEl     = null;   // card container div
-    this._state      = { cards: [], connections: [] };
-    this._onHide     = null;
-    this._selectedId = null;
-    this._saveTimer  = null;
-    this._contextMenu = null;
+    this._el                   = null;
+    this._svgEl                = null;
+    this._cardEl               = null;
+    this._state                = { cards: [], connections: [] };
+    this._onHide               = null;
+    this._selectedId           = null;
+    this._selectedConnectionId = null;
+    this._saveTimer            = null;
+    this._contextMenu          = null;
+    // Connect mode
+    this._isConnectMode        = false;
+    this._connectSourceId      = null;
+    this._connectBtn           = null;
+    // Keyboard handler ref for cleanup
+    this._keyHandler           = null;
+    // Sidebar ResizeObserver ref for cleanup
+    this._sidebarObserver      = null;
   }
 
   // ── Public API ─────────────────────────────────────────────────
@@ -33,21 +55,41 @@ export class BoardLayer {
     document.body.appendChild(el);
     this._el = el;
 
+    // Clip board's right edge to sidebar and track it
+    this._updateBoardBounds();
+    const sidebar = document.querySelector('#sidebar');
+    if (sidebar) {
+      this._sidebarObserver = new ResizeObserver(() => this._updateBoardBounds());
+      this._sidebarObserver.observe(sidebar);
+    }
+
     this._buildToolbar(el);
     this._buildExitBtn(el);
+
+    // SVG layer (behind cards)
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.id = 'pb-svg';
+    el.appendChild(svg);
+    this._svgEl = svg;
 
     const cardContainer = document.createElement('div');
     cardContainer.id = 'pb-card-container';
     el.appendChild(cardContainer);
     this._cardEl = cardContainer;
 
-    // Deselect + close context menu on board click
+    // Deselect on board click
     el.addEventListener('pointerdown', (e) => {
       if (e.target === el || e.target === cardContainer) {
         this._select(null);
       }
       this._closeContextMenu();
     });
+
+    // Keyboard: Escape cancels connect mode
+    this._keyHandler = (e) => {
+      if (e.key === 'Escape' && this._isConnectMode) this._exitConnectMode();
+    };
+    document.addEventListener('keydown', this._keyHandler);
 
     // Load persisted state
     const raw = canvas.scene?.getFlag(MODULE_ID, 'boardState');
@@ -57,8 +99,19 @@ export class BoardLayer {
 
   hide() {
     document.getElementById('foundry-plot-board-layer')?.remove();
-    this._el     = null;
-    this._cardEl = null;
+    if (this._keyHandler) {
+      document.removeEventListener('keydown', this._keyHandler);
+      this._keyHandler = null;
+    }
+    this._sidebarObserver?.disconnect();
+    this._sidebarObserver = null;
+    this._el                   = null;
+    this._svgEl                = null;
+    this._cardEl               = null;
+    this._isConnectMode        = false;
+    this._connectSourceId      = null;
+    this._connectBtn           = null;
+    this._selectedConnectionId = null;
     this._closeContextMenu();
   }
 
@@ -74,8 +127,12 @@ export class BoardLayer {
 
     const addText = this._toolBtn('＋ Text Card', false, () => this._addCard());
     const addImg  = this._toolBtn('🖼 Image Card', true);
-    const connect = this._toolBtn('⟷ Connect',   true);
-    const del     = this._toolBtn('🗑 Delete',    false, () => this._deleteSelected());
+
+    const connect = this._toolBtn('⟷ Connect', false, () => this._toggleConnectMode());
+    connect.id = 'pb-btn-connect';
+    this._connectBtn = connect;
+
+    const del = this._toolBtn('🗑 Delete', false, () => this._deleteSelected());
     del.id = 'pb-btn-delete';
 
     bar.append(addText, addImg, connect, del);
@@ -109,17 +166,24 @@ export class BoardLayer {
     parent.appendChild(exitBtn);
   }
 
+  // ── Sidebar clipping ───────────────────────────────────────────
+
+  _updateBoardBounds() {
+    const w = document.querySelector('#sidebar')?.getBoundingClientRect().width ?? 0;
+    if (this._el) this._el.style.right = w + 'px';
+  }
+
   // ── Card creation ──────────────────────────────────────────────
 
   _addCard() {
     const card = {
-      id:      crypto.randomUUID(),
-      x:       Math.round((this._el.clientWidth  / 2) - 120),
-      y:       Math.round((this._el.clientHeight / 2) - 80),
-      w:       240,
-      h:       160,
-      color:   CARD_COLORS[0].value,
-      text:    '',
+      id:    crypto.randomUUID(),
+      x:     Math.round((this._el.clientWidth  / 2) - 120),
+      y:     Math.round((this._el.clientHeight / 2) - 80),
+      w:     240,
+      h:     160,
+      color: CARD_COLORS[0].value,
+      text:  '',
     };
     this._state.cards.push(card);
     this._renderCard(card);
@@ -133,17 +197,17 @@ export class BoardLayer {
     if (!this._cardEl) return;
     this._cardEl.innerHTML = '';
     for (const card of this._state.cards) this._renderCard(card);
+    this._renderAllLines();
   }
 
   _renderCard(card) {
     const el = document.createElement('div');
     el.className = 'sb-card';
     el.dataset.id = card.id;
-    el.style.left   = card.x + 'px';
-    el.style.top    = card.y + 'px';
-    el.style.width  = card.w + 'px';
-    el.style.height = card.h + 'px';
-
+    el.style.left       = card.x + 'px';
+    el.style.top        = card.y + 'px';
+    el.style.width      = card.w + 'px';
+    el.style.height     = card.h + 'px';
     el.style.background = card.color;
 
     const header = document.createElement('div');
@@ -152,7 +216,7 @@ export class BoardLayer {
     const body = document.createElement('div');
     body.className = 'sb-card-body';
     body.contentEditable = 'false';
-    body.textContent = card.text;
+    body.innerHTML = card.text ?? '';
 
     const resizeHandle = document.createElement('div');
     resizeHandle.className = 'sb-resize-handle';
@@ -160,7 +224,6 @@ export class BoardLayer {
     el.append(header, body, resizeHandle);
     this._cardEl.appendChild(el);
 
-    // Interactions
     this._attachDrag(el, card);
     this._attachResize(el, card, resizeHandle);
     this._attachEdit(el, card, body);
@@ -168,6 +231,11 @@ export class BoardLayer {
 
     el.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
+      if (this._isConnectMode) {
+        this._handleConnectClick(card.id);
+        e.stopPropagation();
+        return;
+      }
       this._select(card.id);
       e.stopPropagation();
     });
@@ -180,11 +248,42 @@ export class BoardLayer {
   // ── Selection ──────────────────────────────────────────────────
 
   _select(id) {
-    // Clear previous
+    this._deselectConnection();
     this._cardEl?.querySelectorAll('.sb-card.sb-selected')
       .forEach(el => el.classList.remove('sb-selected'));
     this._selectedId = id;
     if (id) this._cardEl_forId(id)?.classList.add('sb-selected');
+  }
+
+  _selectConnection(id) {
+    // Deselect any card
+    this._cardEl?.querySelectorAll('.sb-card.sb-selected')
+      .forEach(el => el.classList.remove('sb-selected'));
+    this._selectedId = null;
+    // Deselect previous connection
+    this._deselectConnection();
+    this._selectedConnectionId = id;
+    // Highlight new connection
+    if (id) {
+      const group = this._svgEl?.querySelector(`g[data-conn-id="${id}"]`);
+      const visLine = group?.querySelector('line');
+      visLine?.setAttribute('stroke', '#f0c040');
+      visLine?.setAttribute('stroke-width', '3');
+      visLine?.setAttribute('opacity', '1');
+    }
+  }
+
+  _deselectConnection() {
+    if (!this._selectedConnectionId) return;
+    const conn = this._state.connections.find(c => c.id === this._selectedConnectionId);
+    const group = this._svgEl?.querySelector(`g[data-conn-id="${this._selectedConnectionId}"]`);
+    if (group && conn) {
+      const visLine = group.querySelector('line');
+      visLine?.setAttribute('stroke', conn.color ?? LINE_DEFAULT_COLOR);
+      visLine?.setAttribute('stroke-width', '2');
+      visLine?.setAttribute('opacity', '0.75');
+    }
+    this._selectedConnectionId = null;
   }
 
   // ── Drag ───────────────────────────────────────────────────────
@@ -194,7 +293,6 @@ export class BoardLayer {
 
     el.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
-      // Don't start drag from resize handle or body in edit mode
       if (e.target.classList.contains('sb-resize-handle')) return;
       if (e.target.contentEditable === 'true') return;
 
@@ -211,8 +309,11 @@ export class BoardLayer {
       if (!dragging) return;
       const dx = e.clientX - startX;
       const dy = e.clientY - startY;
-      el.style.left = (origX + dx) + 'px';
-      el.style.top  = (origY + dy) + 'px';
+      card.x = origX + dx;
+      card.y = origY + dy;
+      el.style.left = card.x + 'px';
+      el.style.top  = card.y + 'px';
+      this._updateLinesForCard(card.id);
     });
 
     el.addEventListener('pointerup', (e) => {
@@ -244,10 +345,11 @@ export class BoardLayer {
 
     handle.addEventListener('pointermove', (e) => {
       if (!resizing) return;
-      const w = Math.max(120, origW + (e.clientX - startX));
-      const h = Math.max(80,  origH + (e.clientY - startY));
-      el.style.width  = w + 'px';
-      el.style.height = h + 'px';
+      card.w = Math.max(120, origW + (e.clientX - startX));
+      card.h = Math.max(80,  origH + (e.clientY - startY));
+      el.style.width  = card.w + 'px';
+      el.style.height = card.h + 'px';
+      this._updateLinesForCard(card.id);
     });
 
     handle.addEventListener('pointerup', (e) => {
@@ -262,36 +364,121 @@ export class BoardLayer {
   // ── Inline edit ────────────────────────────────────────────────
 
   _attachEdit(el, card, body) {
-    // Edit is triggered via the right-click context menu ("✏ Edit Text")
-    // Only blur + keydown are needed here.
-
     body.addEventListener('blur', () => {
       body.contentEditable = 'false';
-      card.text = body.textContent;
+      el.querySelector('.pb-format-bar')?.remove();
+      card.text = body.innerHTML;
       this._save();
     });
 
     body.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        body.textContent = card.text; // revert
+        body.innerHTML = card.text ?? ''; // revert
         body.blur();
       }
       e.stopPropagation();
     });
   }
 
-  // ── Context menu (color picker + delete) ──────────────────────
+  // ── Color palette helpers ──────────────────────────────────────
+
+  _getCardColors() {
+    try {
+      return Array.from({ length: 7 }, (_, i) => ({
+        label: `Color ${i + 1}`,
+        value: game.settings.get(MODULE_ID, `cardColor${i}`) ?? CARD_COLORS[i]?.value,
+      }));
+    } catch { return CARD_COLORS; }
+  }
+
+  _getLineColors() {
+    try {
+      return Array.from({ length: 7 }, (_, i) => ({
+        label: `Color ${i + 1}`,
+        value: game.settings.get(MODULE_ID, `lineColor${i}`) ?? LINE_COLORS[i]?.value,
+      }));
+    } catch { return LINE_COLORS; }
+  }
+
+  // ── Format bar ─────────────────────────────────────────────────
+
+  _attachFormatBar(cardEl, body) {
+    cardEl.querySelector('.pb-format-bar')?.remove(); // idempotent
+    const bar = document.createElement('div');
+    bar.className = 'pb-format-bar';
+
+    const btn = (html, action) => {
+      const b = document.createElement('button');
+      b.className = 'pb-format-btn';
+      b.innerHTML = html;
+      b.addEventListener('mousedown', (e) => { e.preventDefault(); action(); });
+      return b;
+    };
+
+    // Text-color picker button
+    const colorBtn = document.createElement('button');
+    colorBtn.className = 'pb-format-btn';
+    colorBtn.title = 'Text color';
+    colorBtn.innerHTML = '🎨';
+    colorBtn.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const inp = document.createElement('input');
+      inp.type = 'color';
+      inp.style.cssText = 'position:fixed;opacity:0;width:0;height:0;';
+      document.body.appendChild(inp);
+      inp.addEventListener('input', () => {
+        document.execCommand('foreColor', false, inp.value);
+      });
+      inp.addEventListener('change', () => inp.remove());
+      inp.click();
+    });
+
+    // Step the font size of the current selection by delta px.
+    // execCommand('fontSize') only accepts 1-7, so we wrap with size=7
+    // then immediately replace the size attribute with a px inline style.
+    const adjustSize = (delta) => {
+      const sel = window.getSelection();
+      let currentPx = 13; // card body default
+      if (sel && sel.rangeCount > 0) {
+        const node = sel.getRangeAt(0).commonAncestorContainer;
+        const target = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+        const computed = parseFloat(window.getComputedStyle(target).fontSize);
+        if (!isNaN(computed)) currentPx = computed;
+      }
+      const newPx = Math.max(6, Math.round(currentPx + delta));
+      document.execCommand('fontSize', false, '7');
+      body.querySelectorAll('font[size="7"]').forEach(f => {
+        f.style.fontSize = newPx + 'px';
+        f.removeAttribute('size');
+      });
+    };
+
+    bar.append(
+      btn('<b>B</b>', () => document.execCommand('bold')),
+      btn('<i>I</i>', () => document.execCommand('italic')),
+      btn('<u>U</u>', () => document.execCommand('underline')),
+      btn('<s>S</s>', () => document.execCommand('strikeThrough')),
+      colorBtn,
+      btn('A−', () => adjustSize(-4)),
+      btn('A＋', () => adjustSize(+4)),
+    );
+
+    // Insert before the header strip (first child)
+    cardEl.insertBefore(bar, cardEl.firstChild);
+  }
+
+  // ── Context menu ───────────────────────────────────────────────
 
   _attachContextMenu(el, card) {
     el.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       e.stopPropagation();
       this._select(card.id);
-      this._openContextMenu(e.clientX, e.clientY, card);
+      this._openCardContextMenu(e.clientX, e.clientY, card);
     });
   }
 
-  _openContextMenu(x, y, card) {
+  _openCardContextMenu(x, y, card) {
     this._closeContextMenu();
 
     const menu = document.createElement('div');
@@ -306,8 +493,9 @@ export class BoardLayer {
       this._closeContextMenu();
       const cardEl = this._cardEl_forId(card.id);
       const body = cardEl?.querySelector('.sb-card-body');
-      if (body) {
+      if (body && cardEl) {
         body.contentEditable = 'true';
+        this._attachFormatBar(cardEl, body);
         body.focus();
       }
     });
@@ -315,7 +503,7 @@ export class BoardLayer {
     const swatches = document.createElement('div');
     swatches.className = 'pb-color-swatches';
 
-    for (const { label, value } of CARD_COLORS) {
+    for (const { label, value } of this._getCardColors()) {
       const swatch = document.createElement('button');
       swatch.className = 'pb-swatch';
       swatch.title = label;
@@ -323,10 +511,8 @@ export class BoardLayer {
       if (value === card.color) swatch.classList.add('pb-swatch-active');
       swatch.addEventListener('click', () => {
         card.color = value;
-        // Update whole card background in DOM
         const cardEl = this._cardEl_forId(card.id);
         if (cardEl) cardEl.style.background = value;
-        // Refresh swatch active state
         swatches.querySelectorAll('.pb-swatch').forEach(s => s.classList.remove('pb-swatch-active'));
         swatch.classList.add('pb-swatch-active');
         this._save();
@@ -335,8 +521,29 @@ export class BoardLayer {
       swatches.appendChild(swatch);
     }
 
-    const separator = document.createElement('hr');
-    separator.className = 'pb-menu-separator';
+    // 8th swatch — free-form color picker
+    const customSwatch = document.createElement('button');
+    customSwatch.className = 'pb-swatch pb-swatch-custom';
+    customSwatch.title = 'Custom color';
+    customSwatch.addEventListener('click', () => {
+      const inp = document.createElement('input');
+      inp.type = 'color';
+      inp.value = card.color;
+      inp.style.cssText = 'position:fixed;opacity:0;width:0;height:0;';
+      document.body.appendChild(inp);
+      inp.addEventListener('input', () => {
+        card.color = inp.value;
+        const cardEl = this._cardEl_forId(card.id);
+        if (cardEl) cardEl.style.background = inp.value;
+        this._save();
+      });
+      inp.addEventListener('change', () => { inp.remove(); this._closeContextMenu(); });
+      inp.click();
+    });
+    swatches.appendChild(customSwatch);
+
+    const sep = document.createElement('hr');
+    sep.className = 'pb-menu-separator';
 
     const delBtn = document.createElement('button');
     delBtn.className = 'pb-menu-item pb-menu-delete';
@@ -346,14 +553,79 @@ export class BoardLayer {
       this._closeContextMenu();
     });
 
-    menu.append(editBtn, swatches, separator, delBtn);
+    menu.append(editBtn, swatches, sep, delBtn);
+    this._mountContextMenu(menu);
+  }
+
+  _openLineContextMenu(x, y, conn) {
+    this._closeContextMenu();
+
+    const menu = document.createElement('div');
+    menu.id = 'pb-context-menu';
+    menu.style.left = x + 'px';
+    menu.style.top  = y + 'px';
+
+    const swatches = document.createElement('div');
+    swatches.className = 'pb-color-swatches';
+
+    for (const { label, value } of this._getLineColors()) {
+      const swatch = document.createElement('button');
+      swatch.className = 'pb-swatch';
+      swatch.title = label;
+      swatch.style.background = value;
+      if (value === conn.color) swatch.classList.add('pb-swatch-active');
+      swatch.addEventListener('click', () => {
+        conn.color = value;
+        this._selectedConnectionId = null; // deselect so new color shows
+        this._renderAllLines();
+        this._save();
+        this._closeContextMenu();
+      });
+      swatches.appendChild(swatch);
+    }
+
+    // 8th swatch — free-form color picker
+    const customSwatch = document.createElement('button');
+    customSwatch.className = 'pb-swatch pb-swatch-custom';
+    customSwatch.title = 'Custom color';
+    customSwatch.addEventListener('click', () => {
+      const inp = document.createElement('input');
+      inp.type = 'color';
+      inp.value = conn.color ?? LINE_DEFAULT_COLOR;
+      inp.style.cssText = 'position:fixed;opacity:0;width:0;height:0;';
+      document.body.appendChild(inp);
+      inp.addEventListener('input', () => {
+        conn.color = inp.value;
+        this._selectedConnectionId = null;
+        this._renderAllLines();
+        this._save();
+      });
+      inp.addEventListener('change', () => { inp.remove(); this._closeContextMenu(); });
+      inp.click();
+    });
+    swatches.appendChild(customSwatch);
+
+    const sep = document.createElement('hr');
+    sep.className = 'pb-menu-separator';
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'pb-menu-item pb-menu-delete';
+    delBtn.textContent = '🗑 Delete Connection';
+    delBtn.addEventListener('click', () => {
+      this._deleteConnection(conn.id);
+      this._closeContextMenu();
+    });
+
+    menu.append(swatches, sep, delBtn);
+    this._mountContextMenu(menu);
+  }
+
+  _mountContextMenu(menu) {
     document.body.appendChild(menu);
     this._contextMenu = menu;
 
-    // Close on next click outside the menu
     const outsideHandler = (e) => {
       if (this._contextMenu?.contains(e.target)) {
-        // Click was inside the menu — let it process, then re-arm
         document.addEventListener('pointerdown', outsideHandler, { once: true });
         return;
       }
@@ -369,24 +641,172 @@ export class BoardLayer {
     this._contextMenu = null;
   }
 
+  // ── Connect mode ───────────────────────────────────────────────
+
+  _toggleConnectMode() {
+    if (this._isConnectMode) {
+      this._exitConnectMode();
+    } else {
+      this._isConnectMode = true;
+      this._connectBtn?.classList.add('pb-btn-active');
+      this._el?.classList.add('pb-connect-mode');
+    }
+  }
+
+  _exitConnectMode() {
+    this._isConnectMode = false;
+    this._connectBtn?.classList.remove('pb-btn-active');
+    this._el?.classList.remove('pb-connect-mode');
+    if (this._connectSourceId) {
+      this._cardEl_forId(this._connectSourceId)?.classList.remove('pb-connect-source');
+      this._connectSourceId = null;
+    }
+  }
+
+  _handleConnectClick(cardId) {
+    if (!this._connectSourceId) {
+      // Set source
+      this._connectSourceId = cardId;
+      this._cardEl_forId(cardId)?.classList.add('pb-connect-source');
+    } else if (this._connectSourceId === cardId) {
+      // Clicked same card — cancel
+      this._exitConnectMode();
+    } else {
+      // Create connection
+      const conn = {
+        id:         crypto.randomUUID(),
+        fromCardId: this._connectSourceId,
+        toCardId:   cardId,
+        color:      LINE_DEFAULT_COLOR,
+      };
+      this._state.connections.push(conn);
+      this._renderLine(conn);
+      this._exitConnectMode();
+      this._save();
+    }
+  }
+
+  // ── SVG line rendering ─────────────────────────────────────────
+
+  _renderAllLines() {
+    if (!this._svgEl) return;
+    this._svgEl.innerHTML = '';
+    for (const conn of this._state.connections) this._renderLine(conn);
+  }
+
+  _renderLine(conn) {
+    const from = this._state.cards.find(c => c.id === conn.fromCardId);
+    const to   = this._state.cards.find(c => c.id === conn.toCardId);
+    if (!from || !to || !this._svgEl) return;
+
+    const x1 = from.x + from.w / 2;
+    const y1 = from.y + from.h / 2;
+    const x2 = to.x   + to.w   / 2;
+    const y2 = to.y   + to.h   / 2;
+
+    const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    group.dataset.connId = conn.id;
+
+    const isSelected = conn.id === this._selectedConnectionId;
+
+    // Visible line
+    const visLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    visLine.setAttribute('x1', x1); visLine.setAttribute('y1', y1);
+    visLine.setAttribute('x2', x2); visLine.setAttribute('y2', y2);
+    visLine.setAttribute('stroke',       isSelected ? '#f0c040' : (conn.color ?? LINE_DEFAULT_COLOR));
+    visLine.setAttribute('stroke-width', isSelected ? '3' : '2');
+    visLine.setAttribute('opacity',      isSelected ? '1' : '0.75');
+    visLine.setAttribute('pointer-events', 'none');
+
+    // Wide transparent hit target
+    const hitLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    hitLine.setAttribute('x1', x1); hitLine.setAttribute('y1', y1);
+    hitLine.setAttribute('x2', x2); hitLine.setAttribute('y2', y2);
+    hitLine.setAttribute('stroke', 'transparent');
+    hitLine.setAttribute('stroke-width', '14');
+    hitLine.setAttribute('pointer-events', 'stroke');
+    hitLine.style.cursor = 'pointer';
+
+    hitLine.addEventListener('click', (e) => {
+      this._selectConnection(conn.id);
+      e.stopPropagation();
+    });
+
+    hitLine.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this._selectConnection(conn.id);
+      this._openLineContextMenu(e.clientX, e.clientY, conn);
+    });
+
+    group.append(visLine, hitLine);
+    this._svgEl.appendChild(group);
+  }
+
+  // Update line endpoints when a card moves or resizes
+  _updateLinesForCard(cardId) {
+    const card = this._state.cards.find(c => c.id === cardId);
+    if (!card || !this._svgEl) return;
+
+    const cx = card.x + card.w / 2;
+    const cy = card.y + card.h / 2;
+
+    for (const conn of this._state.connections) {
+      if (conn.fromCardId !== cardId && conn.toCardId !== cardId) continue;
+      const group = this._svgEl.querySelector(`g[data-conn-id="${conn.id}"]`);
+      if (!group) continue;
+
+      group.querySelectorAll('line').forEach(line => {
+        if (conn.fromCardId === cardId) {
+          line.setAttribute('x1', cx);
+          line.setAttribute('y1', cy);
+        }
+        if (conn.toCardId === cardId) {
+          line.setAttribute('x2', cx);
+          line.setAttribute('y2', cy);
+        }
+      });
+    }
+  }
+
   // ── Delete / Clear ─────────────────────────────────────────────
 
   _deleteSelected() {
-    if (this._selectedId) this._deleteCard(this._selectedId);
+    if (this._selectedConnectionId) {
+      this._deleteConnection(this._selectedConnectionId);
+    } else if (this._selectedId) {
+      this._deleteCard(this._selectedId);
+    }
   }
 
   _deleteCard(id) {
-    this._state.cards       = this._state.cards.filter(c => c.id !== id);
+    this._state.cards = this._state.cards.filter(c => c.id !== id);
+
+    // Remove SVG groups for connections involving this card
+    const toRemove = this._state.connections.filter(
+      cn => cn.fromCardId === id || cn.toCardId === id
+    );
+    toRemove.forEach(cn => {
+      this._svgEl?.querySelector(`g[data-conn-id="${cn.id}"]`)?.remove();
+      if (this._selectedConnectionId === cn.id) this._selectedConnectionId = null;
+    });
     this._state.connections = this._state.connections.filter(
       cn => cn.fromCardId !== id && cn.toCardId !== id
     );
+
     this._cardEl_forId(id)?.remove();
     if (this._selectedId === id) this._selectedId = null;
     this._save();
   }
 
+  _deleteConnection(id) {
+    this._state.connections = this._state.connections.filter(c => c.id !== id);
+    this._svgEl?.querySelector(`g[data-conn-id="${id}"]`)?.remove();
+    if (this._selectedConnectionId === id) this._selectedConnectionId = null;
+    this._save();
+  }
+
   _clearBoard() {
-    // Remove any existing dialog first
     document.getElementById('pb-clear-dialog')?.remove();
 
     const sceneName = canvas.scene?.name ?? '';
@@ -419,16 +839,14 @@ export class BoardLayer {
     confirm.addEventListener('click', () => {
       dialog.remove();
       this._state = { cards: [], connections: [] };
-      this._renderAllCards();
       this._selectedId = null;
+      this._selectedConnectionId = null;
+      this._renderAllCards();
       this._save();
     });
 
     cancel.addEventListener('click', () => dialog.remove());
-
-    // Stop board interactions while dialog is open
     dialog.addEventListener('pointerdown', e => e.stopPropagation());
-
     input.focus();
   }
 
