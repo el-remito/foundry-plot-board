@@ -33,7 +33,71 @@
     );
 }
 
-/* ── Temporary exit button (replaced by toolbar in M2) ────── */
+/* ── Toolbar ───────────────────────────────────────────────── */
+
+#pb-toolbar {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(15, 10, 5, 0.82);
+  border: 1px solid rgba(245, 240, 232, 0.18);
+  border-radius: 24px;
+  backdrop-filter: blur(4px);
+  z-index: 10;
+}
+
+.pb-tool-btn {
+  padding: 5px 12px;
+  background: transparent;
+  color: #f5f0e8;
+  border: 1px solid rgba(245, 240, 232, 0.25);
+  border-radius: 14px;
+  font-family: 'Special Elite', 'Courier New', monospace;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.pb-tool-btn:hover:not(:disabled) {
+  background: rgba(240, 192, 64, 0.15);
+  border-color: #f0c040;
+  color: #f0c040;
+}
+
+.pb-tool-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+#pb-btn-delete {
+  border-color: rgba(220, 80, 80, 0.4);
+  color: #e89090;
+}
+
+#pb-btn-delete:hover:not(:disabled) {
+  background: rgba(220, 80, 80, 0.15);
+  border-color: #e84040;
+  color: #e84040;
+}
+
+#pb-btn-clear {
+  border-color: rgba(220, 80, 80, 0.25);
+  color: #c87070;
+}
+
+#pb-btn-clear:hover {
+  background: rgba(180, 40, 40, 0.2);
+  border-color: #c84040;
+  color: #e84040;
+}
+
+/* ── Exit button ───────────────────────────────────────────── */
 
 #pb-exit-btn {
   position: absolute;
@@ -54,6 +118,248 @@
   background: rgba(50, 20, 20, 0.95);
   border-color: #f0c040;
   color: #f0c040;
+}
+
+/* ── Cards ─────────────────────────────────────────────────── */
+
+#pb-card-container {
+  position: absolute;
+  inset: 0;
+  pointer-events: none; /* cards themselves opt back in */
+}
+
+.sb-card {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  background: #e8dfc8; /* default cream — overridden per-card via inline style */
+  border-radius: 3px;
+  box-shadow: 2px 4px 12px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2);
+  pointer-events: all;
+  cursor: default;
+  user-select: none;
+  min-width: 120px;
+  min-height: 80px;
+  overflow: hidden;
+}
+
+.sb-card.sb-selected {
+  outline: 2px solid #f0c040;
+  outline-offset: 1px;
+}
+
+.sb-card-header {
+  flex-shrink: 0;
+  height: 8px;
+  border-radius: 3px 3px 0 0;
+  background: rgba(0, 0, 0, 0.10); /* subtle dark overlay for visual structure */
+}
+
+.sb-card-body {
+  flex: 1;
+  padding: 8px 10px;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  color: #2a1f0e;
+  line-height: 1.45;
+  overflow-y: auto;
+  word-break: break-word;
+  white-space: pre-wrap;
+  outline: none;
+}
+
+.sb-card-body[contenteditable="true"] {
+  background: rgba(255, 255, 255, 0.35);
+  cursor: text;
+  user-select: text;
+}
+
+.sb-resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  cursor: se-resize;
+  background: linear-gradient(
+    135deg,
+    transparent 40%,
+    rgba(0, 0, 0, 0.18) 40%,
+    rgba(0, 0, 0, 0.18) 55%,
+    transparent 55%,
+    transparent 70%,
+    rgba(0, 0, 0, 0.18) 70%
+  );
+}
+
+/* ── Context menu ──────────────────────────────────────────── */
+
+#pb-context-menu {
+  position: fixed;
+  z-index: 200;
+  background: rgba(18, 12, 6, 0.94);
+  border: 1px solid rgba(245, 240, 232, 0.2);
+  border-radius: 8px;
+  padding: 8px;
+  min-width: 140px;
+  box-shadow: 2px 4px 16px rgba(0, 0, 0, 0.5);
+  font-family: 'Special Elite', 'Courier New', monospace;
+}
+
+.pb-color-swatches {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+  margin-bottom: 4px;
+}
+
+.pb-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s, border-color 0.1s;
+}
+
+.pb-swatch:hover {
+  transform: scale(1.15);
+  border-color: rgba(245, 240, 232, 0.6);
+}
+
+.pb-swatch.pb-swatch-active {
+  border-color: #f0c040;
+  transform: scale(1.1);
+}
+
+.pb-menu-separator {
+  border: none;
+  border-top: 1px solid rgba(245, 240, 232, 0.15);
+  margin: 6px 0;
+}
+
+.pb-menu-item {
+  display: block;
+  width: 100%;
+  padding: 5px 8px;
+  background: transparent;
+  color: #f5f0e8;
+  border: none;
+  border-radius: 4px;
+  font-family: 'Special Elite', 'Courier New', monospace;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pb-menu-item:hover {
+  background: rgba(245, 240, 232, 0.1);
+}
+
+.pb-menu-delete {
+  color: #e89090;
+}
+
+.pb-menu-delete:hover {
+  background: rgba(220, 80, 80, 0.15);
+  color: #e84040;
+}
+
+/* ── Clear Board dialog ────────────────────────────────────── */
+
+#pb-clear-dialog {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 50;
+}
+
+#pb-clear-box {
+  background: #1a1208;
+  border: 1px solid rgba(245, 240, 232, 0.2);
+  border-radius: 10px;
+  padding: 24px 28px;
+  width: 340px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  font-family: 'Special Elite', 'Courier New', monospace;
+}
+
+.pb-clear-warning {
+  color: #e89090;
+  font-size: 13px;
+  margin: 0 0 10px;
+}
+
+.pb-clear-label {
+  color: #f5f0e8;
+  font-size: 13px;
+  margin: 0 0 10px;
+}
+
+.pb-clear-label strong {
+  color: #f0c040;
+}
+
+#pb-clear-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(245, 240, 232, 0.25);
+  border-radius: 5px;
+  color: #f5f0e8;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  outline: none;
+  margin-bottom: 16px;
+}
+
+#pb-clear-input:focus {
+  border-color: #f0c040;
+}
+
+.pb-clear-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.pb-clear-buttons button {
+  padding: 6px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(245, 240, 232, 0.25);
+  font-family: 'Special Elite', 'Courier New', monospace;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+#pb-clear-cancel {
+  background: transparent;
+  color: #f5f0e8;
+}
+
+#pb-clear-cancel:hover {
+  background: rgba(245, 240, 232, 0.08);
+}
+
+#pb-clear-confirm {
+  background: rgba(180, 40, 40, 0.7);
+  color: #f5f0e8;
+  border-color: rgba(220, 80, 80, 0.5);
+}
+
+#pb-clear-confirm:hover:not(:disabled) {
+  background: rgba(220, 40, 40, 0.9);
+  border-color: #e84040;
+}
+
+#pb-clear-confirm:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 /* ── Persistent resume button (lives outside the board layer) ── */
