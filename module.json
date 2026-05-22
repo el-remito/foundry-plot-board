@@ -3,11 +3,17 @@
   "title": "Plot Board",
   "description": "Transform any scene into a collaborative freeform planning board. Players can place text cards, images, and draw connection lines between them.",
   "version": "1.0.0",
+  "authors": [
+    {
+      "name": "remito"
+    }
+  ],
   "compatibility": {
     "minimum": "14",
     "verified": "14"
   },
   "esmodules": ["plot-board.js"],
   "styles": ["board.css"],
-  "authors": []
+  "manifest": "https://raw.githubusercontent.com/el-remito/foundry-plot-board/main/module.json",
+  "download": "https://github.com/el-remito/foundry-plot-board/archive/refs/heads/main.zip"
 }
