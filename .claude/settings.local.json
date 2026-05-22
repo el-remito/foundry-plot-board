@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Rename-Item \"D:\\\\Desktop\\\\Code Projects\\\\foundry-plot-board\\\\scene-board\" \"plot-board\")",
+      "PowerShell(Rename-Item \"D:\\\\Desktop\\\\Code Projects\\\\foundry-plot-board\\\\plot-board\\\\scene-board.js\" \"plot-board.js\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
+    ]
+  }
+}

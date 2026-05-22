@@ -42,6 +42,13 @@ export class BoardLayer {
     this._keyHandler           = null;
     // Sidebar ResizeObserver ref for cleanup
     this._sidebarObserver      = null;
+    // Pan / zoom
+    this._panX                 = 0;
+    this._panY                 = 0;
+    this._zoom                 = 1;
+    this._transformEl          = null;
+    // Clipboard paste handler
+    this._pasteHandler         = null;
   }
 
   // ── Public API ─────────────────────────────────────────────────
@@ -66,30 +73,100 @@ export class BoardLayer {
     this._buildToolbar(el);
     this._buildExitBtn(el);
 
-    // SVG layer (behind cards)
+    // Transform container (pan/zoom wrapper for SVG + cards)
+    const transformEl = document.createElement('div');
+    transformEl.className = 'sb-transform-container';
+    el.appendChild(transformEl);
+    this._transformEl = transformEl;
+
+    // SVG layer (behind cards, inside transform)
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.id = 'pb-svg';
-    el.appendChild(svg);
+    transformEl.appendChild(svg);
     this._svgEl = svg;
 
     const cardContainer = document.createElement('div');
     cardContainer.id = 'pb-card-container';
-    el.appendChild(cardContainer);
+    transformEl.appendChild(cardContainer);
     this._cardEl = cardContainer;
 
-    // Deselect on board click
+    // Deselect on board background click
     el.addEventListener('pointerdown', (e) => {
-      if (e.target === el || e.target === cardContainer) {
+      if (e.target === el || e.target === transformEl || e.target === cardContainer) {
         this._select(null);
       }
       this._closeContextMenu();
     });
 
-    // Keyboard: Escape cancels connect mode
+    // ── Pan / Zoom ─────────────────────────────────────────────────
+
+    // Wheel → zoom toward cursor
+    el.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const factor  = e.deltaY < 0 ? 1.1 : 0.9;
+      const newZoom = Math.min(3.0, Math.max(0.2, this._zoom * factor));
+      const rect = el.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      this._panX = mx - (mx - this._panX) * (newZoom / this._zoom);
+      this._panY = my - (my - this._panY) * (newZoom / this._zoom);
+      this._zoom = newZoom;
+      this._applyTransform();
+    }, { passive: false });
+
+    // Left-click drag on empty board background → pan
+    let isPanning = false, panStartX = 0, panStartY = 0, panOrigX = 0, panOrigY = 0, panMoved = false;
+    el.addEventListener('pointerdown', (e) => {
+      if (e.button === 0 && (e.target === el || e.target === transformEl || e.target === cardContainer)) {
+        isPanning = true;
+        panMoved  = false;
+        panStartX = e.clientX; panStartY = e.clientY;
+        panOrigX  = this._panX; panOrigY  = this._panY;
+        el.setPointerCapture(e.pointerId);
+        // No preventDefault — let the deselect listener also fire
+      }
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (!isPanning) return;
+      const dx = e.clientX - panStartX;
+      const dy = e.clientY - panStartY;
+      if (!panMoved && Math.hypot(dx, dy) > 4) panMoved = true;
+      if (panMoved) {
+        this._panX = panOrigX + dx;
+        this._panY = panOrigY + dy;
+        this._applyTransform();
+      }
+    });
+    el.addEventListener('pointerup', (e) => {
+      if (isPanning && e.button === 0) { isPanning = false; panMoved = false; }
+    });
+
+    // ── Keyboard ──────────────────────────────────────────────────
+
     this._keyHandler = (e) => {
       if (e.key === 'Escape' && this._isConnectMode) this._exitConnectMode();
     };
     document.addEventListener('keydown', this._keyHandler);
+
+    // ── Paste → image card ────────────────────────────────────────
+
+    this._pasteHandler = (e) => {
+      // Don't intercept when a card body/label is being edited
+      if (document.activeElement?.contentEditable === 'true') return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            this._readImageFile(file, (url) => this._createImageCard(url));
+          }
+          break;
+        }
+      }
+    };
+    document.addEventListener('paste', this._pasteHandler);
 
     // Load persisted state
     const raw = canvas.scene?.getFlag(MODULE_ID, 'boardState');
@@ -103,15 +180,23 @@ export class BoardLayer {
       document.removeEventListener('keydown', this._keyHandler);
       this._keyHandler = null;
     }
+    if (this._pasteHandler) {
+      document.removeEventListener('paste', this._pasteHandler);
+      this._pasteHandler = null;
+    }
     this._sidebarObserver?.disconnect();
     this._sidebarObserver = null;
     this._el                   = null;
     this._svgEl                = null;
     this._cardEl               = null;
+    this._transformEl          = null;
     this._isConnectMode        = false;
     this._connectSourceId      = null;
     this._connectBtn           = null;
     this._selectedConnectionId = null;
+    this._panX                 = 0;
+    this._panY                 = 0;
+    this._zoom                 = 1;
     this._closeContextMenu();
   }
 
@@ -126,7 +211,7 @@ export class BoardLayer {
     bar.id = 'pb-toolbar';
 
     const addText = this._toolBtn('＋ Text Card', false, () => this._addCard());
-    const addImg  = this._toolBtn('🖼 Image Card', true);
+    const addImg  = this._toolBtn('🖼 Image Card', false, () => this._addImageCard());
 
     const connect = this._toolBtn('⟷ Connect', false, () => this._toggleConnectMode());
     connect.id = 'pb-btn-connect';
@@ -173,13 +258,88 @@ export class BoardLayer {
     if (this._el) this._el.style.right = w + 'px';
   }
 
+  // ── Transform helpers ──────────────────────────────────────────
+
+  _applyTransform() {
+    if (this._transformEl) {
+      this._transformEl.style.transform =
+        `translate(${this._panX}px, ${this._panY}px) scale(${this._zoom})`;
+    }
+  }
+
+  // Convert viewport clientX/clientY to board-space coordinates
+  _toBoard(clientX, clientY) {
+    return {
+      x: (clientX - this._panX) / this._zoom,
+      y: (clientY - this._panY) / this._zoom,
+    };
+  }
+
+  // ── Image card ─────────────────────────────────────────────────
+
+  _addImageCard() {
+    const input = document.createElement('input');
+    input.type   = 'file';
+    input.accept = 'image/*';
+    input.style.cssText = 'position:fixed;opacity:0;width:0;height:0;';
+    document.body.appendChild(input);
+    input.addEventListener('change', () => {
+      const file = input.files?.[0];
+      if (file) this._readImageFile(file, (url) => this._createImageCard(url));
+      input.remove();
+    });
+    input.addEventListener('cancel', () => input.remove());
+    input.click();
+  }
+
+  _readImageFile(file, cb) {
+    const reader = new FileReader();
+    reader.addEventListener('load', () => cb(reader.result));
+    reader.readAsDataURL(file);
+  }
+
+  _createImageCard(imageUrl) {
+    const center = this._toBoard(this._el.clientWidth / 2, this._el.clientHeight / 2);
+    const card = {
+      id:       crypto.randomUUID(),
+      type:     'image',
+      x:        Math.round(center.x - 160),
+      y:        Math.round(center.y - 120),
+      w:        320,
+      h:        240,
+      color:    CARD_COLORS[0].value,
+      imageUrl,
+      text:     '',
+    };
+    this._state.cards.push(card);
+    this._renderCard(card);
+    this._select(card.id);
+    this._save();
+  }
+
+  // ── Label edit (image cards) ────────────────────────────────────
+
+  _attachLabelEdit(el, card, label) {
+    label.addEventListener('blur', () => {
+      label.contentEditable = 'false';
+      card.text = label.textContent ?? '';
+      this._save();
+    });
+    label.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' || e.key === 'Enter') label.blur();
+      e.stopPropagation();
+    });
+  }
+
   // ── Card creation ──────────────────────────────────────────────
 
   _addCard() {
+    const center = this._toBoard(this._el.clientWidth / 2, this._el.clientHeight / 2);
     const card = {
       id:    crypto.randomUUID(),
-      x:     Math.round((this._el.clientWidth  / 2) - 120),
-      y:     Math.round((this._el.clientHeight / 2) - 80),
+      type:  'text',
+      x:     Math.round(center.x - 120),
+      y:     Math.round(center.y - 80),
       w:     240,
       h:     160,
       color: CARD_COLORS[0].value,
@@ -215,8 +375,6 @@ export class BoardLayer {
 
     const body = document.createElement('div');
     body.className = 'sb-card-body';
-    body.contentEditable = 'false';
-    body.innerHTML = card.text ?? '';
 
     const resizeHandle = document.createElement('div');
     resizeHandle.className = 'sb-resize-handle';
@@ -224,9 +382,29 @@ export class BoardLayer {
     el.append(header, body, resizeHandle);
     this._cardEl.appendChild(el);
 
+    if (card.type === 'image') {
+      el.classList.add('sb-card-image');
+      const img = document.createElement('img');
+      img.className = 'sb-card-img';
+      img.src       = card.imageUrl ?? '';
+      img.draggable = false;
+
+      const label = document.createElement('div');
+      label.className       = 'sb-card-label';
+      label.contentEditable = 'false';
+      label.textContent     = card.text ?? '';
+
+      body.append(img);
+      header.append(label);
+      this._attachLabelEdit(el, card, label);
+    } else {
+      body.contentEditable = 'false';
+      body.innerHTML = card.text ?? '';
+      this._attachEdit(el, card, body);
+    }
+
     this._attachDrag(el, card);
     this._attachResize(el, card, resizeHandle);
-    this._attachEdit(el, card, body);
     this._attachContextMenu(el, card);
 
     el.addEventListener('pointerdown', (e) => {
@@ -307,10 +485,8 @@ export class BoardLayer {
 
     el.addEventListener('pointermove', (e) => {
       if (!dragging) return;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
-      card.x = origX + dx;
-      card.y = origY + dy;
+      card.x = origX + (e.clientX - startX) / this._zoom;
+      card.y = origY + (e.clientY - startY) / this._zoom;
       el.style.left = card.x + 'px';
       el.style.top  = card.y + 'px';
       this._updateLinesForCard(card.id);
@@ -319,10 +495,8 @@ export class BoardLayer {
     el.addEventListener('pointerup', (e) => {
       if (!dragging) return;
       dragging = false;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
-      card.x = origX + dx;
-      card.y = origY + dy;
+      card.x = origX + (e.clientX - startX) / this._zoom;
+      card.y = origY + (e.clientY - startY) / this._zoom;
       this._save();
     });
   }
@@ -345,8 +519,8 @@ export class BoardLayer {
 
     handle.addEventListener('pointermove', (e) => {
       if (!resizing) return;
-      card.w = Math.max(120, origW + (e.clientX - startX));
-      card.h = Math.max(80,  origH + (e.clientY - startY));
+      card.w = Math.max(120, origW + (e.clientX - startX) / this._zoom);
+      card.h = Math.max(80,  origH + (e.clientY - startY) / this._zoom);
       el.style.width  = card.w + 'px';
       el.style.height = card.h + 'px';
       this._updateLinesForCard(card.id);
@@ -355,8 +529,8 @@ export class BoardLayer {
     handle.addEventListener('pointerup', (e) => {
       if (!resizing) return;
       resizing = false;
-      card.w = Math.max(120, origW + (e.clientX - startX));
-      card.h = Math.max(80,  origH + (e.clientY - startY));
+      card.w = Math.max(120, origW + (e.clientX - startX) / this._zoom);
+      card.h = Math.max(80,  origH + (e.clientY - startY) / this._zoom);
       this._save();
     });
   }
@@ -488,15 +662,20 @@ export class BoardLayer {
 
     const editBtn = document.createElement('button');
     editBtn.className = 'pb-menu-item';
-    editBtn.textContent = '✏ Edit Text';
+    editBtn.textContent = card.type === 'image' ? '✏ Edit Label' : '✏ Edit Text';
     editBtn.addEventListener('click', () => {
       this._closeContextMenu();
       const cardEl = this._cardEl_forId(card.id);
-      const body = cardEl?.querySelector('.sb-card-body');
-      if (body && cardEl) {
-        body.contentEditable = 'true';
-        this._attachFormatBar(cardEl, body);
-        body.focus();
+      if (card.type === 'image') {
+        const labelEl = cardEl?.querySelector('.sb-card-label');
+        if (labelEl) { labelEl.contentEditable = 'true'; labelEl.focus(); }
+      } else {
+        const body = cardEl?.querySelector('.sb-card-body');
+        if (body && cardEl) {
+          body.contentEditable = 'true';
+          this._attachFormatBar(cardEl, body);
+          body.focus();
+        }
       }
     });
 

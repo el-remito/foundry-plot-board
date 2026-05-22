@@ -120,6 +120,14 @@
   color: #f0c040;
 }
 
+/* ── Transform container (pan/zoom wrapper) ───────────────────── */
+
+.sb-transform-container {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+}
+
 /* ── SVG connection layer ──────────────────────────────────── */
 
 #pb-svg {
@@ -222,6 +230,49 @@
     transparent 70%,
     rgba(0, 0, 0, 0.18) 70%
   );
+}
+
+/* ── Image card ────────────────────────────────────────────── */
+
+.sb-card-image .sb-card-header {
+  height: auto; /* override fixed 8px — expands to fit the label */
+  padding: 0;   /* label provides its own padding */
+}
+
+.sb-card-image .sb-card-body {
+  padding: 0;
+  overflow: hidden;
+  /* flex: 1 inherited from .sb-card-body — fills all space below the header */
+}
+
+.sb-card-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+  pointer-events: none; /* prevent drag conflicts with card drag */
+}
+
+.sb-card-label {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: #2a1f0e;
+  text-align: center;
+  outline: none;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08); /* separator below label, above image */
+  background: transparent; /* header's dark tint already provides visual separation */
+  min-height: 22px;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.sb-card-label[contenteditable="true"] {
+  background: rgba(255, 255, 255, 0.35);
+  cursor: text;
+  user-select: text;
 }
 
 /* ── Format bar (appears inside card during editing) ───────── */
