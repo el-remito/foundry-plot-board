@@ -41,11 +41,11 @@ between them — all synced in real time.
 
 ## Changelog
 
-### v1.1.1 — 2026-05-25
-- Fixed: real-time sync was non-functional due to missing `"socket": true` declaration
+### v1.1.1
+- **Fixed:** Real-time sync was non-functional due to a missing `"socket": true` declaration
   in module.json; changes now appear on all clients instantly without requiring a board re-entry
 
-### v1.1.0 — 2026-05-25
+### v1.1.0
 - **Fixed:** Players received a "no permission" warning when saving board changes
 - **Fixed:** Changes made by players were lost on page refresh (not persisted)
 - Board state is now stored in a player-writable JournalEntry instead of the scene flag,
@@ -53,7 +53,7 @@ between them — all synced in real time.
 - The companion JournalEntry is placed in a GM-only hidden folder so it does not appear
   in the player sidebar
 
-### v1.0.0 — 2026-05-22
+### v1.0.0
 Initial release.
 
 - Text cards with drag, resize, inline rich-text editing, and color picker
