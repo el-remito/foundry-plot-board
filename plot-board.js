@@ -4,6 +4,17 @@ const MODULE_ID = 'foundry-plot-board';
 let board = null;
 let _resumeObserver = null;
 
+async function _ensureCompanionJournal(sceneDoc) {
+  const existingId = sceneDoc.getFlag(MODULE_ID, 'storageId');
+  if (existingId && game.journal.get(existingId)) return game.journal.get(existingId);
+  const journal = await JournalEntry.create({
+    name: `⚙ Plot Board — ${sceneDoc.name}`,
+    ownership: { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER },
+  });
+  await sceneDoc.setFlag(MODULE_ID, 'storageId', journal.id);
+  return journal;
+}
+
 function _setResumeBtn(visible) {
   document.getElementById('pb-board-resume')?.remove();
   _resumeObserver?.disconnect();
@@ -112,6 +123,7 @@ Hooks.on('renderSceneConfig', (app, html) => {
           : CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE
       }
     });
+    if (on) await _ensureCompanionJournal(doc);
     // canvasReady only fires on scene load — trigger board directly if this is the active scene
     if (canvas.scene?.id === doc.id) {
       if (on) {

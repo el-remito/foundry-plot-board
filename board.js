@@ -168,8 +168,11 @@ export class BoardLayer {
     };
     document.addEventListener('paste', this._pasteHandler);
 
-    // Load persisted state
-    const raw = canvas.scene?.getFlag(MODULE_ID, 'boardState');
+    // Load persisted state — prefer companion journal, fall back to scene flag (legacy)
+    const journal = this._getJournal();
+    const raw = journal
+      ? journal.getFlag(MODULE_ID, 'boardState')
+      : canvas.scene?.getFlag(MODULE_ID, 'boardState');
     this._state = raw ? foundry.utils.deepClone(raw) : { cards: [], connections: [] };
     this._renderAllCards();
   }
@@ -201,7 +204,11 @@ export class BoardLayer {
   }
 
   onSocketMessage(payload) {
-    // Implemented in Milestone 5
+    if (payload.action !== 'boardUpdate') return;
+    if (payload.sceneId !== canvas.scene?.id) return;
+    if (payload.userId === game.user?.id) return; // ignore echo of own messages
+    this._state = foundry.utils.deepClone(payload.boardState);
+    this._renderAllCards();
   }
 
   // ── Toolbar ────────────────────────────────────────────────────
@@ -1031,10 +1038,29 @@ export class BoardLayer {
 
   // ── Persistence ────────────────────────────────────────────────
 
+  _getJournal() {
+    const id = canvas.scene?.getFlag(MODULE_ID, 'storageId');
+    return id ? game.journal.get(id) ?? null : null;
+  }
+
   _save() {
+    // Emit immediately so other connected clients see the change without waiting for the flag write
+    game.socket?.emit(`module.${MODULE_ID}`, {
+      action:     'boardUpdate',
+      boardState: this._state,
+      sceneId:    canvas.scene?.id,
+      userId:     game.user?.id,
+    });
+    // Debounced flag write — any user with OWNER access to the companion journal can persist
     clearTimeout(this._saveTimer);
     this._saveTimer = setTimeout(async () => {
-      await canvas.scene?.setFlag(MODULE_ID, 'boardState', this._state);
+      const journal = this._getJournal();
+      if (journal) {
+        await journal.setFlag(MODULE_ID, 'boardState', this._state);
+      } else if (game.user?.isGM) {
+        // Fallback: companion journal not yet created (scene predates this fix)
+        await canvas.scene?.setFlag(MODULE_ID, 'boardState', this._state);
+      }
     }, 300);
   }
 }
