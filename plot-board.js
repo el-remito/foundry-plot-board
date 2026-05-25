@@ -7,8 +7,23 @@ let _resumeObserver = null;
 async function _ensureCompanionJournal(sceneDoc) {
   const existingId = sceneDoc.getFlag(MODULE_ID, 'storageId');
   if (existingId && game.journal.get(existingId)) return game.journal.get(existingId);
+
+  // Find or create the GM-only system folder (identified by module flag, not name)
+  let folder = game.folders.find(
+    f => f.type === 'JournalEntry' && f.getFlag(MODULE_ID, 'systemFolder')
+  );
+  if (!folder) {
+    folder = await Folder.create({
+      name: 'Plot Board (System)',
+      type: 'JournalEntry',
+      ownership: { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE },
+    });
+    await folder.setFlag(MODULE_ID, 'systemFolder', true);
+  }
+
   const journal = await JournalEntry.create({
-    name: `⚙ Plot Board — ${sceneDoc.name}`,
+    name: `Plot Board — ${sceneDoc.name}`,
+    folder: folder.id,
     ownership: { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER },
   });
   await sceneDoc.setFlag(MODULE_ID, 'storageId', journal.id);
