@@ -17,7 +17,8 @@ between them — all synced in real time.
 - **Pan & zoom** — Scroll to zoom (0.2× – 3×). Click-drag on the empty board to pan.
 - **Real-time sync** — All changes are broadcast instantly to every connected client via
   Foundry's built-in socket system.
-- **Persistent state** — The board survives page refreshes; state is stored in the scene flag.
+- **Persistent state** — The board survives page refreshes. State is stored in a companion
+  JournalEntry so players can save changes without a GM present.
 - **Board Mode toggle** — Enable per scene via Scene Config → Miscellaneous tab.
   Toggling ownership for all players automatically.
 - **GM tools** — Clear Board (requires typing the scene name to confirm). GM-only toolbar button.
@@ -39,6 +40,14 @@ between them — all synced in real time.
    button appears next to the sidebar to re-enter.
 
 ## Changelog
+
+### v1.1.0 — 2026-05-25
+- **Fixed:** Players received a "no permission" warning when saving board changes
+- **Fixed:** Changes made by players were lost on page refresh (not persisted)
+- Board state is now stored in a player-writable JournalEntry instead of the scene flag,
+  allowing any connected user to persist changes without a GM present
+- The companion JournalEntry is placed in a GM-only hidden folder so it does not appear
+  in the player sidebar
 
 ### v1.0.0 — 2026-05-22
 Initial release.
