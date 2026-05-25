@@ -41,6 +41,10 @@ between them — all synced in real time.
 
 ## Changelog
 
+### v1.1.1 — 2026-05-25
+- Fixed: real-time sync was non-functional due to missing `"socket": true` declaration
+  in module.json; changes now appear on all clients instantly without requiring a board re-entry
+
 ### v1.1.0 — 2026-05-25
 - **Fixed:** Players received a "no permission" warning when saving board changes
 - **Fixed:** Changes made by players were lost on page refresh (not persisted)
